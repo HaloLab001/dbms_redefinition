@@ -1,10 +1,10 @@
-# contrib/amcheck/Makefile
+# contrib/dbms_redefition/Makefile
 
 MODULE_big	= dbms_redefinition
 OBJS = \
 	$(WIN32RES) \
-	pgut-spi.o
-	migrate.o \
+	pgut-spi.o \
+	libred.o \
 	dbms_redefinition.o
 
 EXTENSION = dbms_redefinition

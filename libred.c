@@ -1,12 +1,45 @@
 /*
- * pg_migrate: lib/migrate.c
+ * dbms_redefinition: libred.c
  *
- * Portions Copyright (c) 2024, HALOTECH CO.,LTD.
+ * 版权所有 (c) 2019-2024, 易景科技保留所有权利。
+ * Copyright (c) 2019-2024, Halo Tech Co.,Ltd. All rights reserved.
+ * 
+ * 易景科技是Halo Database、Halo Database Management System、羲和数据
+ * 库、羲和数据库管理系统（后面简称 Halo ）软件的发明人同时也为知识产权权
+ * 利人。Halo 软件的知识产权，以及与本软件相关的所有信息内容（包括但不限
+ * 于文字、图片、音频、视频、图表、界面设计、版面框架、有关数据或电子文档等）
+ * 均受中华人民共和国法律法规和相应的国际条约保护，易景科技享有上述知识产
+ * 权，但相关权利人依照法律规定应享有的权利除外。未免疑义，本条所指的“知识
+ * 产权”是指任何及所有基于 Halo 软件产生的：（a）版权、商标、商号、域名、与
+ * 商标和商号相关的商誉、设计和专利；与创新、技术诀窍、商业秘密、保密技术、非
+ * 技术信息相关的权利；（b）人身权、掩模作品权、署名权和发表权；以及（c）在
+ * 本协议生效之前已存在或此后出现在世界任何地方的其他工业产权、专有权、与“知
+ * 识产权”相关的权利，以及上述权利的所有续期和延长，无论此类权利是否已在相
+ * 关法域内的相关机构注册。
+ *
+ * This software and related documentation are provided under a license
+ * agreement containing restrictions on use and disclosure and are 
+ * protected by intellectual property laws. Except as expressly permitted
+ * in your license agreement or allowed by law, you may not use, copy, 
+ * reproduce, translate, broadcast, modify, license, transmit, distribute,
+ * exhibit, perform, publish, or display any part, in any form, or by any
+ * means. Reverse engineering, disassembly, or decompilation of this 
+ * software, unless required by law for interoperability, is prohibited.
+ * 
+ * This software is developed for general use in a variety of
+ * information management applications. It is not developed or intended
+ * for use in any inherently dangerous applications, including applications
+ * that may create a risk of personal injury. If you use this software or
+ * in dangerous applications, then you shall be responsible to take all
+ * appropriate fail-safe, backup, redundancy, and other measures to ensure
+ * its safe use. Halo Corporation and its affiliates disclaim any 
+ * liability for any damages caused by use of this software in dangerous
+ * applications.
+ *
  * Portions Copyright (c) 2008-2011, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
  * Portions Copyright (c) 2011, Itagaki Takahiro
  * Portions Copyright (c) 2012-2020, The Reorg Development Team
  */
-
 #include "postgres.h"
 
 #include <unistd.h>
@@ -21,25 +54,19 @@
 /*
  * heap_open/heap_close was moved to table_open/table_close in 12.0
  */
-#if PG_VERSION_NUM >= 120000
 #include "access/table.h"
-#endif
+
 
 /*
  * utils/rel.h no longer includes pg_am.h as of 9.6, so need to include
  * it explicitly.
  */
-#if PG_VERSION_NUM >= 90600
 #include "catalog/pg_am.h"
-#endif
+
 /*
  * catalog/pg_foo_fn.h headers was merged back into pg_foo.h headers
  */
-#if PG_VERSION_NUM >= 110000
 #include "catalog/pg_inherits.h"
-#else
-#include "catalog/pg_inherits_fn.h"
-#endif
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_type.h"
@@ -55,45 +82,29 @@
 #include "utils/relcache.h"
 #include "utils/syscache.h"
 
-#include "migrate.h"
+#include "libred.h"
 #include "pgut-spi.h"
 #include "pgut-be.h"
 
 #include "access/htup_details.h"
-
-/* builtins.h was reorganized for 9.5, so now we need this header */
-#if PG_VERSION_NUM >= 90500
 #include "utils/ruleutils.h"
-#endif
 
-PG_MODULE_MAGIC;
 
-extern Datum PGUT_EXPORT migrate_version(PG_FUNCTION_ARGS);
-extern Datum PGUT_EXPORT migrate_trigger(PG_FUNCTION_ARGS);
-extern Datum PGUT_EXPORT migrate_apply(PG_FUNCTION_ARGS);
-extern Datum PGUT_EXPORT migrate_get_order_by(PG_FUNCTION_ARGS);
-extern Datum PGUT_EXPORT migrate_indexdef(PG_FUNCTION_ARGS);
-extern Datum PGUT_EXPORT migrate_swap(PG_FUNCTION_ARGS);
-extern Datum PGUT_EXPORT migrate_drop(PG_FUNCTION_ARGS);
-extern Datum PGUT_EXPORT migrate_disable_autovacuum(PG_FUNCTION_ARGS);
-extern Datum PGUT_EXPORT migrate_reset_autovacuum(PG_FUNCTION_ARGS);
-extern Datum PGUT_EXPORT migrate_index_swap(PG_FUNCTION_ARGS);
-extern Datum PGUT_EXPORT migrate_get_table_and_inheritors(PG_FUNCTION_ARGS);
 
-PG_FUNCTION_INFO_V1(migrate_version);
-PG_FUNCTION_INFO_V1(migrate_trigger);
-PG_FUNCTION_INFO_V1(migrate_apply);
-PG_FUNCTION_INFO_V1(migrate_get_order_by);
-PG_FUNCTION_INFO_V1(migrate_indexdef);
-PG_FUNCTION_INFO_V1(migrate_swap);
-PG_FUNCTION_INFO_V1(migrate_drop);
-PG_FUNCTION_INFO_V1(migrate_disable_autovacuum);
-PG_FUNCTION_INFO_V1(migrate_reset_autovacuum);
-PG_FUNCTION_INFO_V1(migrate_index_swap);
-PG_FUNCTION_INFO_V1(migrate_get_table_and_inheritors);
+PG_FUNCTION_INFO_V1(libred_version);
+PG_FUNCTION_INFO_V1(libred_trigger);
+PG_FUNCTION_INFO_V1(libred_apply);
+PG_FUNCTION_INFO_V1(libred_get_order_by);
+PG_FUNCTION_INFO_V1(libred_indexdef);
+PG_FUNCTION_INFO_V1(libred_swap);
+PG_FUNCTION_INFO_V1(libred_drop);
+PG_FUNCTION_INFO_V1(libred_disable_autovacuum);
+PG_FUNCTION_INFO_V1(libred_reset_autovacuum);
+PG_FUNCTION_INFO_V1(libred_index_swap);
+PG_FUNCTION_INFO_V1(libred_get_table_and_inheritors);
 
-static void	migrate_init(void);
-static SPIPlanPtr migrate_prepare(const char *src, int nargs, Oid *argtypes);
+static void	libred_init(void);
+static SPIPlanPtr libred_prepare(const char *src, int nargs, Oid *argtypes);
 static const char *get_quoted_relname(Oid oid);
 static const char *get_quoted_nspname(Oid oid);
 static void swap_heap_or_index_files(Oid r1, Oid r2);
@@ -120,40 +131,32 @@ must_be_superuser(const char *func)
 /* The API of RenameRelationInternal() was changed in 9.2.
  * Use the RENAME_REL macro for compatibility across versions.
  */
-#if PG_VERSION_NUM < 120000
-#define RENAME_REL(relid, newrelname) RenameRelationInternal(relid, newrelname, true);
-#else
 #define RENAME_REL(relid, newrelname) RenameRelationInternal(relid, newrelname, true, false);
-#endif
+
 /*
  * is_index flag was added in 12.0, prefer separate macro for relation and index
  */
-#if PG_VERSION_NUM < 120000
-#define RENAME_INDEX(relid, newrelname) RENAME_REL(relid, newrelname);
-#else
 #define RENAME_INDEX(relid, newrelname) RenameRelationInternal(relid, newrelname, true, true);
-#endif
-
-
-#define LIBRARY_VERSION "1.0"
 
 
 Datum
-dbms_redefinition_version(PG_FUNCTION_ARGS)
+libred_version(PG_FUNCTION_ARGS)
 {
-	return CStringGetTextDatum("dbms_redefinition " LIBRARY_VERSION);
+	return CStringGetTextDatum("dbms_redefinition lib version" LIBRARY_VERSION);
 }
 
 /**
- * @fn      Datum migrate_trigger(PG_FUNCTION_ARGS)
+ * @fn      Datum libred_trigger(PG_FUNCTION_ARGS)
  * @brief   Insert a operation log into log-table.
  *
- * migrate_trigger(sql)
+ * libred_trigger(column1, ..., columnN)
  *
- * @param	sql	SQL to insert a operation log into log-table.
+ * @param	column1		A column of the table in primary key/unique index.
+ * ...
+ * @param	columnN		A column of the table in primary key/unique index.
  */
 Datum
-migrate_trigger(PG_FUNCTION_ARGS)
+libred_trigger(PG_FUNCTION_ARGS)
 {
 	TriggerData	   *trigdata = (TriggerData *) fcinfo->context;
 	TupleDesc		desc;
@@ -161,25 +164,27 @@ migrate_trigger(PG_FUNCTION_ARGS)
 	Datum			values[2];
 	bool			nulls[2] = { 0, 0 };
 	Oid				argtypes[2];
-	const char	   *sql;
+	Oid				relid;
+	StringInfo		sql;
 
 	/* authority check */
-	must_be_superuser("migrate_trigger");
+	must_be_superuser("libred_trigger");
 
 	/* make sure it's called as a trigger at all */
 	if (!CALLED_AS_TRIGGER(fcinfo) ||
 		!TRIGGER_FIRED_AFTER(trigdata->tg_event) ||
 		!TRIGGER_FIRED_FOR_ROW(trigdata->tg_event) ||
-		trigdata->tg_trigger->tgnargs != 1)
-		elog(ERROR, "migrate_trigger: invalid trigger call");
+		trigdata->tg_trigger->tgnargs < 1)
+		elog(ERROR, "libred_trigger: invalid trigger call");
+
+	relid = RelationGetRelid(trigdata->tg_relation);
 
 	/* retrieve parameters */
-	sql = trigdata->tg_trigger->tgargs[0];
 	desc = RelationGetDescr(trigdata->tg_relation);
 	argtypes[0] = argtypes[1] = trigdata->tg_relation->rd_rel->reltype;
 
 	/* connect to SPI manager */
-	migrate_init();
+	libred_init();
 
 	if (TRIGGER_FIRED_BY_INSERT(trigdata->tg_event))
 	{
@@ -203,8 +208,17 @@ migrate_trigger(PG_FUNCTION_ARGS)
 		values[1] = copy_tuple(tuple, desc);
 	}
 
-	/* INSERT INTO migrate.log VALUES ($1, $2) */
-	execute_with_args(SPI_OK_INSERT, sql, 2, argtypes, values, nulls);
+	/* prepare INSERT query */
+	sql = makeStringInfo();
+	appendStringInfo(sql, "INSERT INTO dbms_redefinition.__log_%u__(pk, row) "
+		"VALUES(CASE WHEN $1 IS NULL THEN NULL ELSE (ROW(", relid);
+	appendStringInfo(sql, "$1.%s", quote_identifier(trigdata->tg_trigger->tgargs[0]));
+	for (int i = 1; i < trigdata->tg_trigger->tgnargs; ++i)
+		appendStringInfo(sql, ", $1.%s", quote_identifier(trigdata->tg_trigger->tgargs[i]));
+	appendStringInfo(sql, ")::dbms_redefinition.__pk_%u__) END, $2)", relid);
+
+	/* execute the INSERT query */
+	execute_with_args(SPI_OK_INSERT, sql->data, 2, argtypes, values, nulls);
 
 	SPI_finish();
 
@@ -212,10 +226,10 @@ migrate_trigger(PG_FUNCTION_ARGS)
 }
 
 /**
- * @fn      Datum migrate_apply(PG_FUNCTION_ARGS)
+ * @fn      Datum libred_apply(PG_FUNCTION_ARGS)
  * @brief   Apply operations in log table into temp table.
  *
- * migrate_apply(sql_peek, sql_insert, sql_delete, sql_update, sql_pop,  count)
+ * libred_apply(sql_peek, sql_insert, sql_delete, sql_update, sql_pop,  count)
  *
  * @param	sql_peek	SQL to pop tuple from log table.
  * @param	sql_insert	SQL to insert into temp table.
@@ -226,7 +240,7 @@ migrate_trigger(PG_FUNCTION_ARGS)
  * @retval				Number of performed operations.
  */
 Datum
-migrate_apply(PG_FUNCTION_ARGS)
+libred_apply(PG_FUNCTION_ARGS)
 {
 #define DEFAULT_PEEK_COUNT	1000
 
@@ -250,13 +264,13 @@ migrate_apply(PG_FUNCTION_ARGS)
 	initStringInfo(&sql_pop);
 
 	/* authority check */
-	must_be_superuser("migrate_apply");
+	must_be_superuser("libred_apply");
 
 	/* connect to SPI manager */
-	migrate_init();
+	libred_init();
 
 	/* peek tuple in log */
-	plan_peek = migrate_prepare(sql_peek, 1, argtypes_peek);
+	plan_peek = libred_prepare(sql_peek, 1, argtypes_peek);
 
 	for (n = 0;;)
 	{
@@ -305,21 +319,21 @@ migrate_apply(PG_FUNCTION_ARGS)
 			{
 				/* INSERT */
 				if (plan_insert == NULL)
-					plan_insert = migrate_prepare(sql_insert, 1, &argtypes[2]);
+					plan_insert = libred_prepare(sql_insert, 1, &argtypes[2]);
 				execute_plan(SPI_OK_INSERT, plan_insert, &values[2], (nulls[2] ? "n" : " "));
 			}
 			else if (nulls[2])
 			{
 				/* DELETE */
 				if (plan_delete == NULL)
-					plan_delete = migrate_prepare(sql_delete, 1, &argtypes[1]);
+					plan_delete = libred_prepare(sql_delete, 1, &argtypes[1]);
 				execute_plan(SPI_OK_DELETE, plan_delete, &values[1], (nulls[1] ? "n" : " "));
 			}
 			else
 			{
 				/* UPDATE */
 				if (plan_update == NULL)
-					plan_update = migrate_prepare(sql_update, 2, &argtypes[1]);
+					plan_update = libred_prepare(sql_update, 2, &argtypes[1]);
 				execute_plan(SPI_OK_UPDATE, plan_update, &values[1], (nulls[1] ? "n" : " "));
 			}
 
@@ -359,57 +373,37 @@ get_relation_name(Oid relid)
 	char   *strver;
 	int ver;
 
-	/* Get the version of the running server (PG_VERSION_NUM would return
-	 * the version we compiled the extension with) */
-	strver = GetConfigOptionByName("server_version_num", NULL
-#if PG_VERSION_NUM >= 90600
-		, false	    /* missing_ok */
-#endif
-	);
+	if (!OidIsValid(nsp))
+		elog(ERROR, "table name not found for OID %u", relid);
+
+	/* Get the version of the running server */
+	strver = GetConfigOptionByName("server_version_num", NULL, 
+									false	    /* missing_ok */);
 
 	ver = atoi(strver);
 	pfree(strver);
 
-	/*
-	 * Relation names given by PostgreSQL core are always
-	 * qualified since some minor releases. Note that this change
-	 * wasn't introduced in PostgreSQL 9.2 and 9.1 releases.
-	 */
-	if ((ver >= 100000 && ver < 100003) ||
-		(ver >= 90600 && ver < 90608) ||
-		(ver >= 90500 && ver < 90512) ||
-		(ver >= 90400 && ver < 90417) ||
-		(ver >= 90300 && ver < 90322) ||
-		(ver >= 90200 && ver < 90300) ||
-		(ver >= 90100 && ver < 90200))
-	{
-		/* Qualify the name if not visible in search path */
-		if (RelationIsVisible(relid))
-			nspname = NULL;
-		else
-			nspname = get_namespace_name(nsp);
-	}
+	if (ver < 140000)
+		elog(ERROR, "dbms_redefinition requires Halo 14,15,16 & PostgreSQL 14,15,16.");
+
+	/* Always qualify the name */
+	if (OidIsValid(nsp))
+		nspname = get_namespace_name(nsp);
 	else
-	{
-		/* Always qualify the name */
-		if (OidIsValid(nsp))
-			nspname = get_namespace_name(nsp);
-		else
-			nspname = NULL;
-	}
+		nspname = NULL;
 
 	return quote_qualified_identifier(nspname, get_rel_name(relid));
 }
 
 char *
-parse_error(const char * original_sql)
+parse_error(Oid index)
 {
-	elog(ERROR, "unexpected index definition: %s", original_sql);
+	elog(ERROR, "unexpected index definition: %s", pg_get_indexdef_string(index));
 	return NULL;
 }
 
 char *
-skip_const(const char * original_sql, char *sql, const char *arg1, const char *arg2)
+skip_const(Oid index, char *sql, const char *arg1, const char *arg2)
 {
 	size_t	len;
 
@@ -421,11 +415,11 @@ skip_const(const char * original_sql, char *sql, const char *arg1, const char *a
 	}
 
 	/* error */
-	return parse_error(original_sql);
+	return parse_error(index);
 }
 
 char *
-skip_until_const(const char * original_sql, char *sql, const char *what)
+skip_until_const(Oid index, char *sql, const char *what)
 {
 	char *pos;
 
@@ -439,11 +433,11 @@ skip_until_const(const char * original_sql, char *sql, const char *what)
 	}
 
 	/* error */
-	return parse_error(original_sql);
+	return parse_error(index);
 }
 
 char *
-skip_ident(const char * original_sql, char *sql)
+skip_ident(Oid index, char *sql)
 {
 	while (*sql && isspace((unsigned char) *sql))
 		sql++;
@@ -455,7 +449,7 @@ skip_ident(const char * original_sql, char *sql)
 		{
 			char *end = strchr(sql, '"');
 			if (end == NULL)
-				return parse_error(original_sql);
+				return parse_error(index);
 			else if (end[1] != '"')
 			{
 				end[1] = '\0';
@@ -474,7 +468,7 @@ skip_ident(const char * original_sql, char *sql)
 	}
 
 	/* error */
-	return parse_error(original_sql);
+	return parse_error(index);
 }
 
 /*
@@ -482,7 +476,7 @@ skip_ident(const char * original_sql, char *sql)
  * Returns the next character of the 'end', or NULL if 'end' is not found.
  */
 char *
-skip_until(const char * original_sql, char *sql, char end)
+skip_until(Oid index, char *sql, char end)
 {
 	char	instr = 0;
 	int		nopen = 0;
@@ -531,41 +525,40 @@ skip_until(const char * original_sql, char *sql, char end)
 	}
 
 	/* error */
-	return parse_error(original_sql);
+	return parse_error(index);
 }
 
 static void
 parse_indexdef(IndexDef *stmt, Oid index, Oid table)
 {
 	char *sql = pg_get_indexdef_string(index);
-	const char *original_sql = strdup(sql);
 	const char *idxname = get_quoted_relname(index);
 	const char *tblname = get_relation_name(table);
 	const char *limit = strchr(sql, '\0');
 
 	/* CREATE [UNIQUE] INDEX */
 	stmt->create = sql;
-	sql = skip_const(original_sql, sql, "CREATE INDEX", "CREATE UNIQUE INDEX");
+	sql = skip_const(index, sql, "CREATE INDEX", "CREATE UNIQUE INDEX");
 	/* index */
 	stmt->index = sql;
-	sql = skip_const(original_sql, sql, idxname, NULL);
+	sql = skip_const(index, sql, idxname, NULL);
 	/* ON */
-	sql = skip_const(original_sql, sql, "ON", NULL);
+	sql = skip_const(index, sql, "ON", NULL);
 	/* table */
 	stmt->table = sql;
-	sql = skip_const(original_sql, sql, tblname, NULL);
+	sql = skip_const(index, sql, tblname, NULL);
 	/* USING */
-	sql = skip_const(original_sql, sql, "USING", NULL);
+	sql = skip_const(index, sql, "USING", NULL);
 	/* type */
 	stmt->type = sql;
-	sql = skip_ident(original_sql, sql);
+	sql = skip_ident(index, sql);
 	/* (columns) */
 	if ((sql = strchr(sql, '(')) == NULL)
-		parse_error(original_sql);
+		parse_error(index);
 	sql++;
 	stmt->columns = sql;
-	if ((sql = skip_until(original_sql, sql, ')')) == NULL)
-		parse_error(original_sql);
+	if ((sql = skip_until(index, sql, ')')) == NULL)
+		parse_error(index);
 
 	/* options */
 	stmt->options = sql;
@@ -576,15 +569,15 @@ parse_indexdef(IndexDef *stmt, Oid index, Oid table)
 	 * if there was one it would appear here. */
 	if (sql < limit && strstr(sql, "TABLESPACE"))
 	{
-		sql = skip_until_const(original_sql, sql, "TABLESPACE");
+		sql = skip_until_const(index, sql, "TABLESPACE");
 		stmt->tablespace = sql;
-		sql = skip_ident(original_sql, sql);
+		sql = skip_ident(index, sql);
 	}
 
 	/* Note: assuming WHERE is the only clause allowed after TABLESPACE */
 	if (sql < limit && strstr(sql, "WHERE"))
 	{
-		sql = skip_until_const(original_sql, sql, "WHERE");
+		sql = skip_until_const(index, sql, "WHERE");
 		stmt->where = sql;
 	}
 
@@ -632,17 +625,17 @@ parse_indexdef_col(char *token, char **desc, char **nulls, char **collate)
 }
 
 /**
- * @fn      Datum migrate_get_order_by(PG_FUNCTION_ARGS)
+ * @fn      Datum libred_get_order_by(PG_FUNCTION_ARGS)
  * @brief   Get key definition of the index.
  *
- * migrate_get_order_by(index, table)
+ * libred_get_order_by(index, table)
  *
  * @param	index	Oid of target index.
  * @param	table	Oid of table of the index.
  * @retval			Create index DDL for temp table.
  */
 Datum
-migrate_get_order_by(PG_FUNCTION_ARGS)
+libred_get_order_by(PG_FUNCTION_ARGS)
 {
 	Oid				index = PG_GETARG_OID(0);
 	Oid				table = PG_GETARG_OID(1);
@@ -652,7 +645,6 @@ migrate_get_order_by(PG_FUNCTION_ARGS)
 	StringInfoData	str;
 	Relation		indexRel = NULL;
 	int				nattr;
-	const char     *original_sql = pg_get_indexdef_string(index);
 
 	parse_indexdef(&stmt, index, table);
 
@@ -672,9 +664,9 @@ migrate_get_order_by(PG_FUNCTION_ARGS)
 		token = next;
 		while (isspace((unsigned char) *token))
 			token++;
-		next = skip_until(original_sql, next, ',');
+		next = skip_until(index, next, ',');
 		parse_indexdef_col(token, &coldesc, &colnulls, &colcollate);
-		opcname = skip_until(original_sql, token, ' ');
+		opcname = skip_until(index, token, ' ');
 		appendStringInfoString(&str, token);
 		if (colcollate)
 			appendStringInfo(&str, " %s", colcollate);
@@ -708,11 +700,7 @@ migrate_get_order_by(PG_FUNCTION_ARGS)
 				if (indexRel == NULL)
 					indexRel = index_open(index, NoLock);
 
-#if PG_VERSION_NUM >= 110000
 				opcintype = TupleDescAttr(RelationGetDescr(indexRel), nattr)->atttypid;
-#else
-				opcintype = RelationGetDescr(indexRel)->attrs[nattr]->atttypid;
-#endif
 			}
 
 			oprid = get_opfamily_member(opfamily, opcintype, opcintype, strategy);
@@ -736,31 +724,26 @@ migrate_get_order_by(PG_FUNCTION_ARGS)
 }
 
 /**
- * @fn      Datum migrate_indexdef(PG_FUNCTION_ARGS)
+ * @fn      Datum libred_indexdef(PG_FUNCTION_ARGS)
  * @brief   Reproduce DDL that create index at the temp table.
  *
- * migrate_indexdef(index, table)
+ * libred_indexdef(index, table)
  *
  * @param	index		Oid of target index.
  * @param	table		Oid of table of the index.
  * @param	tablespace	Namespace for the index. If NULL keep the original.
  * @param   boolean		Whether to use CONCURRENTLY when creating the index.
- * @param   text		Hash to append to index name
  * @retval			Create index DDL for temp table.
  */
 Datum
-migrate_indexdef(PG_FUNCTION_ARGS)
+libred_indexdef(PG_FUNCTION_ARGS)
 {
 	Oid				index;
 	Oid				table;
 	Name			tablespace = NULL;
 	IndexDef		stmt;
 	StringInfoData	str;
-	StringInfoData	index_builder;
 	bool			concurrent_index = PG_GETARG_BOOL(3);
-	const char      *hash = TEXT_TO_CSTRING(PG_GETARG_TEXT_P(4));
-	char 			*index_name;
-	const char 		*index_with_hash;
 
 	if (PG_ARGISNULL(0) || PG_ARGISNULL(1))
 		PG_RETURN_NULL();
@@ -771,26 +754,20 @@ migrate_indexdef(PG_FUNCTION_ARGS)
 	if (!PG_ARGISNULL(2))
 		tablespace = PG_GETARG_NAME(2);
 
-	index_name = get_rel_name(index);
-	initStringInfo(&index_builder);
-	appendStringInfo(&index_builder, "%s_%s", index_name ? index_name : "", hash);
-	index_with_hash = quote_identifier(index_builder.data);
-
 	parse_indexdef(&stmt, index, table);
 
 	initStringInfo(&str);
-
 	if (concurrent_index)
-		appendStringInfo(&str, "%s CONCURRENTLY %s ON %s USING %s (%s)%s",
-			stmt.create, index_with_hash, stmt.table, stmt.type, stmt.columns, stmt.options);
+		appendStringInfo(&str, "%s CONCURRENTLY __index_%u__ ON %s USING %s (%s)%s",
+			stmt.create, index, stmt.table, stmt.type, stmt.columns, stmt.options);
 	else
-		appendStringInfo(&str, "%s %s ON migrate.table_%u USING %s (%s)%s",
-			stmt.create, index_with_hash, table, stmt.type, stmt.columns, stmt.options);
+		appendStringInfo(&str, "%s __index_%u__ ON dbms_redefinition.__table_%u__ USING %s (%s)%s",
+			stmt.create, index, table, stmt.type, stmt.columns, stmt.options);
 
 	/* specify the new tablespace or the original one if any */
 	if (tablespace || stmt.tablespace)
 		appendStringInfo(&str, " TABLESPACE %s",
-			(tablespace ? NameStr(*tablespace) : stmt.tablespace));
+			(tablespace ? quote_identifier(NameStr(*tablespace)) : stmt.tablespace));
 
 	if (stmt.where)
 		appendStringInfo(&str, " WHERE %s", stmt.where);
@@ -807,11 +784,11 @@ getoid(HeapTuple tuple, TupleDesc desc, int column)
 }
 
 /**
- * @fn      Datum migrate_swap(PG_FUNCTION_ARGS)
+ * @fn      Datum libred_swap(PG_FUNCTION_ARGS)
  * @brief   Swapping relfilenode of tables and relation ids of toast tables
  *          and toast indexes.
  *
- * migrate_swap(oid, relname)
+ * libred_swap(oid, relname)
  *
  * TODO: remove useless CommandCounterIncrement().
  *
@@ -819,7 +796,7 @@ getoid(HeapTuple tuple, TupleDesc desc, int column)
  * @retval			None.
  */
 Datum
-migrate_swap(PG_FUNCTION_ARGS)
+libred_swap(PG_FUNCTION_ARGS)
 {
 	Oid				oid = PG_GETARG_OID(0);
 	const char	   *relname = get_quoted_relname(oid);
@@ -842,10 +819,10 @@ migrate_swap(PG_FUNCTION_ARGS)
 	Oid				owner2;
 
 	/* authority check */
-	must_be_superuser("migrate_swap");
+	must_be_superuser("libred_swap");
 
 	/* connect to SPI manager */
-	migrate_init();
+	libred_init();
 
 	/* swap relfilenode and dependencies for tables. */
 	values[0] = ObjectIdGetDatum(oid);
@@ -857,7 +834,7 @@ migrate_swap(PG_FUNCTION_ARGS)
 		"       pg_catalog.pg_class Y LEFT JOIN pg_catalog.pg_index TY"
 		"         ON Y.reltoastrelid = TY.indrelid AND TY.indisvalid"
 		" WHERE X.oid = $1"
-		"   AND Y.oid = ('migrate.table_' || X.oid)::regclass",
+		"   AND Y.oid = ('dbms_redefinition.__table_' || X.oid || '__')::regclass",
 		1, argtypes, values, nulls);
 
 	tuptable = SPI_tuptable;
@@ -865,7 +842,7 @@ migrate_swap(PG_FUNCTION_ARGS)
 	records = SPI_processed;
 
 	if (records == 0)
-		elog(ERROR, "migrate_swap : no swap target");
+		elog(ERROR, "libred_swap : no swap target");
 
 	tuple = tuptable->vals[0];
 
@@ -884,6 +861,22 @@ migrate_swap(PG_FUNCTION_ARGS)
 		CommandCounterIncrement();
 	}
 
+	/*
+	 * Sanity check if both relations are locked in access exclusive mode
+	 * before swapping these files.
+	 */
+	{
+		LOCKTAG	tag;
+
+		SET_LOCKTAG_RELATION(tag, MyDatabaseId, oid);
+		if (!LockHeldByMe(&tag, AccessExclusiveLock))
+			elog(ERROR, "must hold access exclusive lock on table \"%s\"", relname);
+
+		SET_LOCKTAG_RELATION(tag, MyDatabaseId, oid2);
+		if (!LockHeldByMe(&tag, AccessExclusiveLock))
+			elog(ERROR, "must hold access exclusive lock on table \"__table_%u__\"", oid);
+	}
+
 	/* swap tables. */
 	swap_heap_or_index_files(oid, oid2);
 	CommandCounterIncrement();
@@ -898,7 +891,7 @@ migrate_swap(PG_FUNCTION_ARGS)
 		" WHERE I.indrelid = $1"
 		"   AND I.indexrelid = X.oid"
 		"   AND I.indisvalid"
-		"   AND Y.oid = ('migrate.index_' || X.oid)::regclass",
+		"   AND Y.oid = ('dbms_redefinition.__index_' || X.oid || '__')::regclass",
 		1, argtypes, values, nulls);
 
 	tuptable = SPI_tuptable;
@@ -918,14 +911,29 @@ migrate_swap(PG_FUNCTION_ARGS)
 	}
 
 	/* swap names for toast tables and toast indexes */
-	if (reltoastrelid1 == InvalidOid)
+	if (reltoastrelid1 == InvalidOid && reltoastrelid2 == InvalidOid)
 	{
 		if (reltoastidxid1 != InvalidOid ||
-			reltoastrelid2 != InvalidOid ||
 			reltoastidxid2 != InvalidOid)
-			elog(ERROR, "migrate_swap : unexpected toast relations (T1=%u, I1=%u, T2=%u, I2=%u",
+			elog(ERROR, "libred_swap : unexpected toast relations (T1=%u, I1=%u, T2=%u, I2=%u",
 				reltoastrelid1, reltoastidxid1, reltoastrelid2, reltoastidxid2);
 		/* do nothing */
+	}
+	else if (reltoastrelid1 == InvalidOid)
+	{
+		char	name[NAMEDATALEN];
+
+		if (reltoastidxid1 != InvalidOid ||
+			reltoastidxid2 == InvalidOid)
+			elog(ERROR, "libred_swap : unexpected toast relations (T1=%u, I1=%u, T2=%u, I2=%u",
+				reltoastrelid1, reltoastidxid1, reltoastrelid2, reltoastidxid2);
+
+		/* rename Y to X */
+		snprintf(name, NAMEDATALEN, "pg_toast_%u", oid);
+		RENAME_REL(reltoastrelid2, name);
+		snprintf(name, NAMEDATALEN, "pg_toast_%u_index", oid);
+		RENAME_INDEX(reltoastidxid2, name);
+		CommandCounterIncrement();
 	}
 	else if (reltoastrelid2 == InvalidOid)
 	{
@@ -933,7 +941,7 @@ migrate_swap(PG_FUNCTION_ARGS)
 
 		if (reltoastidxid1 == InvalidOid ||
 			reltoastidxid2 != InvalidOid)
-			elog(ERROR, "migrate_swap : unexpected toast relations (T1=%u, I1=%u, T2=%u, I2=%u",
+			elog(ERROR, "libred_swap : unexpected toast relations (T1=%u, I1=%u, T2=%u, I2=%u",
 				reltoastrelid1, reltoastidxid1, reltoastrelid2, reltoastidxid2);
 
 		/* rename X to Y */
@@ -970,11 +978,11 @@ migrate_swap(PG_FUNCTION_ARGS)
 		CommandCounterIncrement();
 	}
 
-	/* drop migrate trigger */
+	/* drop dbms_redefinition trigger */
 	execute_with_format(
 		SPI_OK_UTILITY,
-		"DROP TRIGGER IF EXISTS migrate_trigger ON %s.%s CASCADE",
-		nspname, relname);
+		"DROP TRIGGER IF EXISTS __libred_trigger_%u__ ON %s.%s CASCADE",
+		oid, nspname, relname);
 
 	SPI_finish();
 
@@ -982,16 +990,16 @@ migrate_swap(PG_FUNCTION_ARGS)
 }
 
 /**
- * @fn      Datum migrate_drop(PG_FUNCTION_ARGS)
+ * @fn      Datum libred_drop(PG_FUNCTION_ARGS)
  * @brief   Delete temporarily objects.
  *
- * migrate_drop(oid, relname)
+ * libred_drop(oid, relname)
  *
  * @param	oid		Oid of target table.
  * @retval			None.
  */
 Datum
-migrate_drop(PG_FUNCTION_ARGS)
+libred_drop(PG_FUNCTION_ARGS)
 {
 	Oid			oid = PG_GETARG_OID(0);
 	int			numobj = PG_GETARG_INT32(1);
@@ -1005,31 +1013,31 @@ migrate_drop(PG_FUNCTION_ARGS)
 	}
 
 	/* authority check */
-	must_be_superuser("migrate_drop");
+	must_be_superuser("libred_drop");
 
 	/* connect to SPI manager */
-	migrate_init();
+	libred_init();
 
 	/*
-	 * To prevent concurrent lockers of the migrate target table from causing
+	 * To prevent concurrent lockers of the repack target table from causing
 	 * deadlocks, take an exclusive lock on it. Consider that the following
 	 * commands take exclusive lock on tables log_xxx and the target table
-	 * itself when deleting the migrate_trigger on it, while concurrent
+	 * itself when deleting the libred_trigger on it, while concurrent
 	 * updaters require row exclusive lock on the target table and in
 	 * addition, on the log_xxx table, because of the trigger.
 	 *
-	 * Consider how a deadlock could occur - if the DROP TABLE migrate.log_%u
-	 * gets a lock on log_%u table before a concurrent updater could get it
+	 * Consider how a deadlock could occur - if the DROP TABLE __log_%u__
+	 * gets a lock on __log_%u__ table before a concurrent updater could get it
 	 * but after the updater has obtained a lock on the target table, the
 	 * subsequent DROP TRIGGER ... ON target-table would report a deadlock as
 	 * it finds itself waiting for a lock on target-table held by the updater,
-	 * which in turn, is waiting for lock on log_%u table.
+	 * which in turn, is waiting for lock on __log_%u__ table.
 	 *
 	 * Fixes deadlock mentioned in the Github issue #55.
 	 *
 	 * Skip the lock if we are not going to do anything.
-	 * Otherwise, if migrate gets accidentally run twice for the same table
-	 * at the same time, the second migrate, in order to perform
+	 * Otherwise, if repack gets accidentally run twice for the same table
+	 * at the same time, the second repack, in order to perform
 	 * a pointless cleanup, has to wait until the first one completes.
 	 * This adds an ACCESS EXCLUSIVE lock request into the queue
 	 * making the table effectively inaccessible for any other backend.
@@ -1050,7 +1058,7 @@ migrate_drop(PG_FUNCTION_ARGS)
 	{
 		execute_with_format(
 			SPI_OK_UTILITY,
-			"DROP TABLE IF EXISTS migrate.log_%u CASCADE",
+			"DROP TABLE IF EXISTS dbms_redefinition.__log_%u__ CASCADE",
 			oid);
 		--numobj;
 	}
@@ -1060,21 +1068,21 @@ migrate_drop(PG_FUNCTION_ARGS)
 	{
 		execute_with_format(
 			SPI_OK_UTILITY,
-			"DROP TYPE IF EXISTS migrate.pk_%u",
+			"DROP TYPE IF EXISTS dbms_redefinition.__pk_%u__",
 			oid);
 		--numobj;
 	}
 
 	/*
-	 * drop migrate trigger: We have already dropped the trigger in normal
+	 * drop dbms_redefinition trigger: We have already dropped the trigger in normal
 	 * cases, but it can be left on error.
 	 */
 	if (numobj > 0)
 	{
 		execute_with_format(
 			SPI_OK_UTILITY,
-			"DROP TRIGGER IF EXISTS migrate_trigger ON %s.%s CASCADE",
-			nspname, relname);
+			"DROP TRIGGER IF EXISTS __libred_trigger_%u__ ON %s.%s CASCADE",
+			oid, nspname, relname);
 		--numobj;
 	}
 
@@ -1083,7 +1091,7 @@ migrate_drop(PG_FUNCTION_ARGS)
 	{
 		execute_with_format(
 			SPI_OK_UTILITY,
-			"DROP TABLE IF EXISTS migrate.table_%u CASCADE",
+			"DROP TABLE IF EXISTS dbms_redefinition.__table_%u__ CASCADE",
 			oid);
 		--numobj;
 	}
@@ -1094,12 +1102,12 @@ migrate_drop(PG_FUNCTION_ARGS)
 }
 
 Datum
-migrate_disable_autovacuum(PG_FUNCTION_ARGS)
+libred_disable_autovacuum(PG_FUNCTION_ARGS)
 {
 	Oid			oid = PG_GETARG_OID(0);
 
 	/* connect to SPI manager */
-	migrate_init();
+	libred_init();
 
 	execute_with_format(
 		SPI_OK_UTILITY,
@@ -1112,12 +1120,12 @@ migrate_disable_autovacuum(PG_FUNCTION_ARGS)
 }
 
 Datum
-migrate_reset_autovacuum(PG_FUNCTION_ARGS)
+libred_reset_autovacuum(PG_FUNCTION_ARGS)
 {
 	Oid			oid = PG_GETARG_OID(0);
 
 	/* connect to SPI manager */
-	migrate_init();
+	libred_init();
 
 	execute_with_format(
 		SPI_OK_UTILITY,
@@ -1131,20 +1139,20 @@ migrate_reset_autovacuum(PG_FUNCTION_ARGS)
 
 /* init SPI */
 static void
-migrate_init(void)
+libred_init(void)
 {
 	int		ret = SPI_connect();
 	if (ret != SPI_OK_CONNECT)
-		elog(ERROR, "pg_migrate: SPI_connect returned %d", ret);
+		elog(ERROR, "dbms_redefinition: SPI_connect returned %d", ret);
 }
 
 /* prepare plan */
 static SPIPlanPtr
-migrate_prepare(const char *src, int nargs, Oid *argtypes)
+libred_prepare(const char *src, int nargs, Oid *argtypes)
 {
 	SPIPlanPtr	plan = SPI_prepare(src, nargs, argtypes);
 	if (plan == NULL)
-		elog(ERROR, "pg_migrate: migrate_prepare failed (code=%d, query=%s)", SPI_result, src);
+		elog(ERROR, "dbms_redefinition: libred_prepare failed (code=%d, query=%s)", SPI_result, src);
 	return plan;
 }
 
@@ -1178,11 +1186,7 @@ swap_heap_or_index_files(Oid r1, Oid r2)
 	CatalogIndexState indstate;
 
 	/* We need writable copies of both pg_class tuples. */
-#if PG_VERSION_NUM >= 120000
 	relRelation = table_open(RelationRelationId, RowExclusiveLock);
-#else
-	relRelation = heap_open(RelationRelationId, RowExclusiveLock);
-#endif
 
 	reltup1 = SearchSysCacheCopy1(RELOID, ObjectIdGetDatum(r1));
 	if (!HeapTupleIsValid(reltup1))
@@ -1211,20 +1215,28 @@ swap_heap_or_index_files(Oid r1, Oid r2)
 	relform1->reltoastrelid = relform2->reltoastrelid;
 	relform2->reltoastrelid = swaptemp;
 
-	/* set rel1's frozen Xid to larger one */
-	if (TransactionIdIsNormal(relform1->relfrozenxid))
+	/*
+	 * Swap relfrozenxid and relminmxid, as they must be consistent with the data
+	 */
+	if (relform1->relkind != RELKIND_INDEX)
 	{
-		if (TransactionIdFollows(relform1->relfrozenxid,
-								 relform2->relfrozenxid))
-			relform1->relfrozenxid = relform2->relfrozenxid;
-		else
-			relform2->relfrozenxid = relform1->relfrozenxid;
+		TransactionId frozenxid;
+		MultiXactId	minmxid;
+	
+		frozenxid = relform1->relfrozenxid;
+		relform1->relfrozenxid = relform2->relfrozenxid;
+		relform2->relfrozenxid = frozenxid;
+
+		minmxid = relform1->relminmxid;
+		relform1->relminmxid = relform2->relminmxid;
+		relform2->relminmxid = minmxid;
 	}
 
 	/* swap size statistics too, since new rel has freshly-updated stats */
 	{
 		int32		swap_pages;
 		float4		swap_tuples;
+		int32		swap_allvisible;
 
 		swap_pages = relform1->relpages;
 		relform1->relpages = relform2->relpages;
@@ -1233,26 +1245,16 @@ swap_heap_or_index_files(Oid r1, Oid r2)
 		swap_tuples = relform1->reltuples;
 		relform1->reltuples = relform2->reltuples;
 		relform2->reltuples = swap_tuples;
+
+		swap_allvisible = relform1->relallvisible;
+		relform1->relallvisible = relform2->relallvisible;
+		relform2->relallvisible = swap_allvisible;
 	}
 
 	indstate = CatalogOpenIndexes(relRelation);
 
-#if PG_VERSION_NUM < 100000
-
-	/* Update the tuples in pg_class */
-	simple_heap_update(relRelation, &reltup1->t_self, reltup1);
-	simple_heap_update(relRelation, &reltup2->t_self, reltup2);
-
-	/* Keep system catalogs current */
-	CatalogIndexInsert(indstate, reltup1);
-	CatalogIndexInsert(indstate, reltup2);
-
-#else
-
 	CatalogTupleUpdateWithInfo(relRelation, &reltup1->t_self, reltup1, indstate);
 	CatalogTupleUpdateWithInfo(relRelation, &reltup2->t_self, reltup2, indstate);
-
-#endif
 
 	CatalogCloseIndexes(indstate);
 
@@ -1337,54 +1339,50 @@ swap_heap_or_index_files(Oid r1, Oid r2)
 	heap_freetuple(reltup1);
 	heap_freetuple(reltup2);
 
-#if PG_VERSION_NUM >= 120000
 	table_close(relRelation, RowExclusiveLock);
-#else
-	heap_close(relRelation, RowExclusiveLock);
-#endif
 }
 
 /**
- * @fn      Datum migrate_index_swap(PG_FUNCTION_ARGS)
+ * @fn      Datum libred_index_swap(PG_FUNCTION_ARGS)
  * @brief   Swap out an original index on a table with the newly-created one.
  *
- * migrate_index_swap(index)
+ * libred_index_swap(index)
  *
  * @param	index	Oid of the *original* index.
  * @retval	void
  */
 Datum
-migrate_index_swap(PG_FUNCTION_ARGS)
+libred_index_swap(PG_FUNCTION_ARGS)
 {
 	Oid                orig_idx_oid = PG_GETARG_OID(0);
-	Oid                migrated_idx_oid;
+	Oid                repacked_idx_oid;
 	StringInfoData     str;
 	SPITupleTable      *tuptable;
 	TupleDesc          desc;
 	HeapTuple          tuple;
 
 	/* authority check */
-	must_be_superuser("migrate_index_swap");
+	must_be_superuser("libred_index_swap");
 
 	/* connect to SPI manager */
-	migrate_init();
+	libred_init();
 
 	initStringInfo(&str);
 
 	/* Find the OID of our new index. */
 	appendStringInfo(&str, "SELECT oid FROM pg_class "
-					 "WHERE relname = 'index_%u' AND relkind = 'i'",
+					 "WHERE relname = '__index_%u__' AND relkind = 'i'",
 					 orig_idx_oid);
 	execute(SPI_OK_SELECT, str.data);
 	if (SPI_processed != 1)
-		elog(ERROR, "Could not find index 'index_%u', found " UINT64_FORMAT " matches",
+		elog(ERROR, "Could not find index '__index_%u__', found " UINT64_FORMAT " matches",
 			 orig_idx_oid, (uint64) SPI_processed);
 
 	tuptable = SPI_tuptable;
 	desc = tuptable->tupdesc;
 	tuple = tuptable->vals[0];
-	migrated_idx_oid = getoid(tuple, desc, 1);
-	swap_heap_or_index_files(orig_idx_oid, migrated_idx_oid);
+	repacked_idx_oid = getoid(tuple, desc, 1);
+	swap_heap_or_index_files(orig_idx_oid, repacked_idx_oid);
 	SPI_finish();
 	PG_RETURN_VOID();
 }
@@ -1400,7 +1398,7 @@ migrate_index_swap(PG_FUNCTION_ARGS)
  * @retval	regclass[]
  */
 Datum
-migrate_get_table_and_inheritors(PG_FUNCTION_ARGS)
+libred_get_table_and_inheritors(PG_FUNCTION_ARGS)
 {
 	Oid			parent = PG_GETARG_OID(0);
 	List	   *relations;

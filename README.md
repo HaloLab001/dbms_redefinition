@@ -11,7 +11,8 @@ holding a long lived exclusive lock on the processed tables during the
 migration. It builds a copy of the target table and swaps them.
 
 
-Ported from the excellent pg_migrate (https://github.com/phillbaker/pg_migrate) & pg_repack project (https://reorg.github.io/pg_repack).
+The work based on the excellent pg_migrate (https://github.com/phillbaker/pg_migrate) &
+pg_repack project (https://reorg.github.io/pg_repack).
 
 ## Supported Postgres Versions
 
