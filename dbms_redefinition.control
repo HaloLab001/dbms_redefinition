@@ -1,0 +1,5 @@
+# dbms_redefinition extension
+comment = 'DO ONLINE modify Halo/PostgreSQL table (avoiding long locks)'
+default_version = '1.0'
+module_pathname = '$libdir/dbms_redefinition'
+relocatable = true
